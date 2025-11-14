@@ -1,7 +1,7 @@
 import type { NavtalkConfig } from './composables/useNavtalkRealtime'
 
 export const navtalkConfig: NavtalkConfig = {
-  license: 'sk_navtalk_9p9flyCQXGKXuu1iPZXaBYsQhQRq0ZDm',
+  license: '',
   characterName: 'navtalk.Lauren',
   voice: 'sage',
   prompt:
