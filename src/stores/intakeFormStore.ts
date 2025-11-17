@@ -11,29 +11,30 @@ export interface IntakeFormData {
     weightKg: string
   }
   chiefComplaint: {
-    mainConcern: string
-    symptomQuality: string
-    symptomDuration: string
-    additionalNotes: string
+    mainSymptoms: string
+    symptomDurationDays: string
+    symptomPattern: 'acute' | 'subacute' | 'chronic' | ''
+    possibleCause: string
+    aggravatingFactors: string
+    associatedSymptoms: string
+    selfTreatment: string
   }
   medicalHistory: {
-    primaryPhysician: string
-    chronicConditions: string
+    previousDiagnosis: string
     surgicalHistory: string
     allergies: string
     familyHistory: string
   }
   lifestyle: {
-    smokingStatus: 'never' | 'former' | 'current' | ''
-    alcoholUse: 'none' | 'occasional' | 'regular' | ''
-    sleepQuality: 'poor' | 'fair' | 'good' | ''
-    exerciseFrequency: 'never' | 'weekly' | '3x-weekly' | 'daily' | ''
-    dietNotes: string
+    eatingHabits: 'regular' | 'irregular' | ''
+    spicyFoodIntake: 'often' | 'occasionally' | 'never' | ''
+    smokingFrequency: 'none' | 'lt5' | 'gt10' | ''
+    alcoholUse: 'none' | 'occasional' | 'often' | ''
   }
   medications: {
     currentMedications: string
-    lastDose: string
-    pharmacy: string
+    medicationEffect: 'effective' | 'moderate' | 'ineffective' | ''
+    drugAllergy: string
   }
   diagnostics: {
     recentTests: string
@@ -46,39 +47,40 @@ export interface IntakeFormData {
 
 const defaultState: IntakeFormData = {
   basicInfo: {
-    fullName: '',
-    gender: '',
-    age: '',
-    heightCm: '',
-    weightKg: '',
+    fullName: 'Mara Collins',
+    gender: 'female',
+    age: '34',
+    heightCm: '170',
+    weightKg: '60',
   },
   chiefComplaint: {
-    mainConcern: '',
-    symptomQuality: '',
-    symptomDuration: '',
-    additionalNotes: '',
+    mainSymptoms: 'Persistent redness across cheeks with intermittent papules and mild itching.',
+    symptomDurationDays: '14',
+    symptomPattern: 'subacute',
+    possibleCause: 'Reaction after switching to a new sunscreen and foundation.',
+    aggravatingFactors: 'Heat, sun exposure, and spicy meals.',
+    associatedSymptoms: 'Occasional burning sensation, no swelling.',
+    selfTreatment: 'Tried over-the-counter hydrating serum with limited relief.',
   },
   medicalHistory: {
-    primaryPhysician: '',
-    chronicConditions: '',
-    surgicalHistory: '',
-    allergies: '',
-    familyHistory: '',
+    previousDiagnosis: 'Mild seasonal allergies',
+    surgicalHistory: 'Appendectomy (2015)',
+    allergies: 'None reported',
+    familyHistory: 'Mother with mild rosacea, father with hypertension',
   },
   lifestyle: {
-    smokingStatus: '',
-    alcoholUse: '',
-    sleepQuality: '',
-    exerciseFrequency: '',
-    dietNotes: '',
+    eatingHabits: 'regular',
+    spicyFoodIntake: 'occasionally',
+    smokingFrequency: 'none',
+    alcoholUse: 'occasional',
   },
   medications: {
-    currentMedications: '',
-    lastDose: '',
-    pharmacy: '',
+    currentMedications: 'Daily multivitamin, omega-3 supplement',
+    medicationEffect: 'moderate',
+    drugAllergy: 'None',
   },
   diagnostics: {
-    recentTests: '',
+    recentTests: 'Recent CBC normal (January 2025), no imaging performed.',
     attachments: [],
   },
 }
@@ -100,9 +102,13 @@ function loadFromStorage(): IntakeFormData {
 
 const state = reactive(loadFromStorage())
 
-watch(state, (value) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
-}, { deep: true })
+watch(
+  state,
+  (value) => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
+  },
+  { deep: true }
+)
 
 export function useIntakeFormStore() {
   const reset = () => {
@@ -125,10 +131,10 @@ export function formatPatientSummary(data: IntakeFormData) {
 
   return [
     `Patient ${basicInfo.fullName || 'N/A'}, ${basicInfo.age ? `${basicInfo.age} years old` : 'age not specified'}.`,
-    `Chief concern: ${chiefComplaint.mainConcern || 'not provided'}. Symptom quality: ${chiefComplaint.symptomQuality || 'n/a'}. Duration: ${chiefComplaint.symptomDuration || 'n/a'}.`,
-    `Medical history includes: ${medicalHistory.chronicConditions || 'none reported'}. Surgical history: ${medicalHistory.surgicalHistory || 'none reported'}. Allergies: ${medicalHistory.allergies || 'none recorded'}.`,
-    `Lifestyle factors - smoking: ${lifestyle.smokingStatus || 'n/a'}; alcohol: ${lifestyle.alcoholUse || 'n/a'}; exercise: ${lifestyle.exerciseFrequency || 'n/a'}.`,
-    `Current medications: ${medications.currentMedications || 'not listed'}. Last dose noted as: ${medications.lastDose || 'n/a'}.`,
+    `Chief concern: ${chiefComplaint.mainSymptoms || 'not provided'}. Duration: ${chiefComplaint.symptomDurationDays || 'n/a'} day(s). Pattern: ${chiefComplaint.symptomPattern || 'n/a'}.`,
+    `Medical history includes: ${medicalHistory.previousDiagnosis || 'none reported'}. Surgical history: ${medicalHistory.surgicalHistory || 'none reported'}. Allergies: ${medicalHistory.allergies || 'none recorded'}.`,
+    `Lifestyle factors – eating habits: ${lifestyle.eatingHabits || 'n/a'}; spicy intake: ${lifestyle.spicyFoodIntake || 'n/a'}; smoking: ${lifestyle.smokingFrequency || 'n/a'}; alcohol: ${lifestyle.alcoholUse || 'n/a'}.`,
+    `Current medications: ${medications.currentMedications || 'not listed'} (effect: ${medications.medicationEffect || 'n/a'}).`,
   ].join(' ')
 }
 
