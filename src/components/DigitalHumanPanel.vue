@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useNavtalkRealtime } from '@/composables/useNavtalkRealtime'
+import placeholderImage from '@/assets/doctor.png'
 
 const props = withDefaults(
   defineProps<{
@@ -20,6 +21,7 @@ const props = withDefaults(
 )
 
 const videoRef = ref<HTMLVideoElement | null>(null)
+const isVideoReady = ref(false)
 
 const navtalk = useNavtalkRealtime(
   {
@@ -49,6 +51,19 @@ const start = () => navtalk.start()
 const stop = () => navtalk.stop()
 
 defineExpose({ start, stop })
+
+const handleVideoReady = () => {
+  isVideoReady.value = true
+}
+
+watch(
+  () => navtalk.isActive.value,
+  (active) => {
+    if (!active) {
+      isVideoReady.value = false
+    }
+  }
+)
 </script>
 
 <template>
@@ -60,11 +75,20 @@ defineExpose({ start, stop })
         autoplay
         playsinline
         :muted="!navtalk.isActive.value"
-        poster="https://cdn.navtalk.ai/static/digital-human-placeholder.jpg"
+        @loadeddata="handleVideoReady"
+        @playing="handleVideoReady"
       />
 
-      <div v-if="!navtalk.isActive.value" class="idle-overlay">
-        <img src="https://cdn.navtalk.ai/static/digital-human-zoe.jpg" alt="Digital physician" />
+      <div v-if="!isVideoReady" class="placeholder-layer">
+        <img :src="placeholderImage" alt="Digital physician placeholder" />
+        <div class="loading-stack">
+          <span class="spinner" aria-hidden="true"></span>
+          <p>Connecting to your digital physician...</p>
+        </div>
+      </div>
+
+      <div v-if="!navtalk.isActive.value && isVideoReady" class="idle-overlay">
+        <img :src="placeholderImage" alt="Digital physician" />
       </div>
 
       <div class="picture-in-picture">
@@ -129,7 +153,7 @@ defineExpose({ start, stop })
 
 .video-feed {
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 1 / 1;
   object-fit: cover;
   display: block;
 }
@@ -146,6 +170,49 @@ defineExpose({ start, stop })
   width: min(50%, 320px);
   border-radius: 28px;
   box-shadow: 0 18px 40px -30px rgba(0, 0, 0, 0.6);
+}
+
+.placeholder-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: linear-gradient(180deg, rgba(36, 38, 82, 0.85), rgba(13, 15, 34, 0.92));
+}
+
+.placeholder-layer img {
+  width: min(55%, 340px);
+  border-radius: 32px;
+  box-shadow: 0 25px 60px -35px rgba(0, 0, 0, 0.65);
+}
+
+.loading-stack {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
+}
+
+.spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .picture-in-picture {
