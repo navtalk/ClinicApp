@@ -158,9 +158,14 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="control-bar">
-      <button class="icon-button" type="button">
+      <button
+        class="icon-button"
+        :class="{ inactive: !navtalk.isMicEnabled.value }"
+        type="button"
+        @click="navtalk.toggleMicrophone()"
+      >
         <span class="icon mic"></span>
-        Microphone
+        {{ navtalk.isMicEnabled.value ? 'Microphone On' : 'Microphone Off' }}
       </button>
       <button
         class="primary-button"
@@ -368,6 +373,16 @@ onBeforeUnmount(() => {
 .icon-button:hover {
   background: rgba(255, 255, 255, 0.18);
   transform: translateY(-1px);
+}
+
+.icon-button.inactive {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.icon-button.inactive:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: none;
 }
 
 .icon {

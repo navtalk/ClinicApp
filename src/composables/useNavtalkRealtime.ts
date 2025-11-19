@@ -36,7 +36,7 @@ export function useNavtalkRealtime(config: NavtalkConfig, options: UseNavtalkRea
   const statusMessage = ref('Idle')
   const errorMessage = ref('')
   const chatMessages = ref<ConversationMessage[]>(loadChatHistory())
-  const streamingResponses = reactive<Record<string, string>>({})
+const streamingResponses = reactive<Record<string, string>>({})
 
   let socket: WebSocket | null = null
   let resultSocket: WebSocket | null = null
@@ -44,7 +44,8 @@ export function useNavtalkRealtime(config: NavtalkConfig, options: UseNavtalkRea
   let audioContext: AudioContext | null = null
   let audioProcessor: ScriptProcessorNode | null = null
   let audioStream: MediaStream | null = null
-  let configuration: RTCConfiguration = { ...ICE_CONFIGURATION }
+let configuration: RTCConfiguration = { ...ICE_CONFIGURATION }
+const isMicEnabled = ref(true)
 
   watch(
     chatMessages,
@@ -85,7 +86,7 @@ export function useNavtalkRealtime(config: NavtalkConfig, options: UseNavtalkRea
     })
   }
 
-  const start = async () => {
+const start = async () => {
     if (isConnecting.value || isActive.value) return
 
     if (!config.license) {
@@ -397,6 +398,10 @@ export function useNavtalkRealtime(config: NavtalkConfig, options: UseNavtalkRea
   }
 
   const startRecording = () => {
+    if (!isMicEnabled.value) {
+      debug('Microphone disabled, skipping start')
+      return
+    }
     if (audioContext || typeof navigator === 'undefined') return
 
     debug('Requesting microphone access')
@@ -433,6 +438,28 @@ export function useNavtalkRealtime(config: NavtalkConfig, options: UseNavtalkRea
         console.error('Unable to access microphone', error)
         notifyError('Unable to access microphone. Please enable browser audio permissions.')
       })
+  }
+
+  const enableMicrophone = async () => {
+    if (isMicEnabled.value) return
+    isMicEnabled.value = true
+    if (isActive.value && !audioContext) {
+      startRecording()
+    }
+  }
+
+  const disableMicrophone = () => {
+    if (!isMicEnabled.value) return
+    isMicEnabled.value = false
+    cleanupAudio()
+  }
+
+  const toggleMicrophone = () => {
+    if (isMicEnabled.value) {
+      disableMicrophone()
+    } else {
+      enableMicrophone()
+    }
   }
 
   const handleOffer = async (message: any) => {
@@ -556,6 +583,10 @@ export function useNavtalkRealtime(config: NavtalkConfig, options: UseNavtalkRea
     stop,
     toggle,
     clearHistory,
+    isMicEnabled,
+    toggleMicrophone,
+    enableMicrophone,
+    disableMicrophone,
   }
 }
 
@@ -591,4 +622,3 @@ function loadChatHistory(): ConversationMessage[] {
     return []
   }
 }
-
