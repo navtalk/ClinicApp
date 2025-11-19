@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useNavtalkRealtime } from '@/composables/useNavtalkRealtime'
 import placeholderImage from '@/assets/doctor.png'
 
@@ -22,6 +22,9 @@ const props = withDefaults(
 
 const videoRef = ref<HTMLVideoElement | null>(null)
 const isVideoReady = ref(false)
+const cameraPreviewRef = ref<HTMLVideoElement | null>(null)
+const cameraStream = ref<MediaStream | null>(null)
+const cameraEnabled = ref(false)
 
 const navtalk = useNavtalkRealtime(
   {
@@ -47,6 +50,46 @@ const toggleSession = () => {
   navtalk.toggle()
 }
 
+const toggleCamera = async () => {
+  if (cameraEnabled.value) {
+    stopCamera()
+  } else {
+    await startCamera()
+  }
+}
+
+const startCamera = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 320, height: 180 },
+      audio: false,
+    })
+    cameraStream.value = stream
+    cameraEnabled.value = true
+
+    await nextTick()
+    if (cameraPreviewRef.value) {
+      cameraPreviewRef.value.srcObject = stream
+      cameraPreviewRef.value
+        .play()
+        .catch((error) => console.error('Camera preview failed to play', error))
+    }
+  } catch (error) {
+    console.error('Failed to access camera', error)
+    cameraStream.value = null
+    cameraEnabled.value = false
+  }
+}
+
+const stopCamera = () => {
+  cameraStream.value?.getTracks().forEach((track) => track.stop())
+  cameraStream.value = null
+  cameraEnabled.value = false
+  if (cameraPreviewRef.value) {
+    cameraPreviewRef.value.srcObject = null
+  }
+}
+
 const start = () => navtalk.start()
 const stop = () => navtalk.stop()
 
@@ -64,6 +107,10 @@ watch(
     }
   }
 )
+
+onBeforeUnmount(() => {
+  stopCamera()
+})
 </script>
 
 <template>
@@ -92,9 +139,16 @@ watch(
       </div>
 
       <div class="picture-in-picture">
-        <div class="pip-card">
-          <span>No Camera</span>
+        <div v-if="cameraEnabled" class="pip-video">
+          <video
+            ref="cameraPreviewRef"
+            autoplay
+            playsinline
+            muted
+            class="pip-preview"
+          ></video>
         </div>
+        <div v-else class="pip-card">No Camera</div>
       </div>
 
       <div class="status-chip">
@@ -116,9 +170,9 @@ watch(
       >
         {{ sessionLabel }}
       </button>
-      <button class="icon-button" type="button">
+      <button class="icon-button" type="button" @click="toggleCamera">
         <span class="icon cam"></span>
-        Camera
+        {{ cameraEnabled ? 'Camera Off' : 'Camera On' }}
       </button>
     </div>
 
@@ -233,6 +287,22 @@ watch(
   font-size: 0.85rem;
   border: 1px solid rgba(124, 131, 214, 0.2);
   backdrop-filter: blur(8px);
+}
+
+.pip-video {
+  width: 140px;
+  height: 96px;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 12px 24px -18px rgba(0, 0, 0, 0.8);
+}
+
+.pip-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
 }
 
 .status-chip {
