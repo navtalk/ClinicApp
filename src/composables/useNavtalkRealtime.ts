@@ -28,6 +28,28 @@ const ICE_CONFIGURATION: RTCConfiguration = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 }
 
+const AUTO_HANGUP_INSTRUCTIONS =
+  'When the patient clearly indicates they want to end the call (bye, thanks, want to leave, etc.), respond graciously and then call the `end_conversation` tool once your reply is complete so the session can hang up automatically.'
+
+const END_CONVERSATION_TOOL = {
+  type: 'function',
+  name: 'end_conversation',
+  description:
+    'Invoke this when the patient wants to hang up or you need to terminate the realtime consultation so the client can stop the call.',
+  parameters: {
+    type: 'object',
+    properties: {
+      reason: {
+        type: 'string',
+        description: 'Brief explanation of why the call should end (e.g., patient said goodbye).',
+      },
+    },
+    required: ['reason'],
+  },
+} as const
+
+const AUTO_HANGUP_DELAY_MS = 2000
+
 export function useNavtalkRealtime(config: NavtalkConfig, options: UseNavtalkRealtimeOptions) {
   const baseUrl = config.baseUrl ?? 'transfer.navtalk.ai'
 
@@ -36,7 +58,7 @@ export function useNavtalkRealtime(config: NavtalkConfig, options: UseNavtalkRea
   const statusMessage = ref('Idle')
   const errorMessage = ref('')
   const chatMessages = ref<ConversationMessage[]>(loadChatHistory())
-const streamingResponses = reactive<Record<string, string>>({})
+  const streamingResponses = reactive<Record<string, string>>({})
 
   let socket: WebSocket | null = null
   let resultSocket: WebSocket | null = null
@@ -44,8 +66,11 @@ const streamingResponses = reactive<Record<string, string>>({})
   let audioContext: AudioContext | null = null
   let audioProcessor: ScriptProcessorNode | null = null
   let audioStream: MediaStream | null = null
-let configuration: RTCConfiguration = { ...ICE_CONFIGURATION }
-const isMicEnabled = ref(true)
+  let configuration: RTCConfiguration = { ...ICE_CONFIGURATION }
+  const isMicEnabled = ref(true)
+  const functionCallArguments: Record<string, string> = {}
+  let pendingHangupReason: string | null = null
+  let hangupTimeout: ReturnType<typeof setTimeout> | null = null
 
   watch(
     chatMessages,
@@ -126,6 +151,12 @@ const start = async () => {
     statusMessage.value = 'Idle'
     isConnecting.value = false
     isActive.value = false
+    pendingHangupReason = null
+    if (hangupTimeout) {
+      clearTimeout(hangupTimeout)
+      hangupTimeout = null
+    }
+    Object.keys(functionCallArguments).forEach((key) => delete functionCallArguments[key])
 
     cleanupAudio()
     cleanupPeerConnection()
@@ -300,10 +331,12 @@ const start = async () => {
   const sendSessionUpdate = () => {
     if (!socket || socket.readyState !== WebSocket.OPEN) return
 
+    const instructions = [config.prompt?.trim(), AUTO_HANGUP_INSTRUCTIONS].filter(Boolean).join('\n\n')
+
     const sessionConfig = {
       type: 'session.update',
       session: {
-        instructions: config.prompt,
+        instructions,
         turn_detection: {
           type: 'server_vad',
           threshold: 0.5,
@@ -319,6 +352,7 @@ const start = async () => {
         input_audio_transcription: {
           model: 'whisper-1',
         },
+        tools: [END_CONVERSATION_TOOL],
       },
     }
 
@@ -378,6 +412,26 @@ const start = async () => {
         break
       case 'response.audio.done':
         statusMessage.value = 'Listening'
+        finalizeScheduledHangup()
+        break
+      case 'response.function_call_arguments.delta':
+        if (event.call_id && typeof event.delta === 'string') {
+          functionCallArguments[event.call_id] = (functionCallArguments[event.call_id] || '') + event.delta
+        }
+        break
+      case 'response.function_call_arguments.done':
+        {
+          const callId: string | undefined = event.call_id
+          const payload = {
+            name: event.name as string | undefined,
+            call_id: callId,
+            arguments: event.arguments ?? (callId ? functionCallArguments[callId] : undefined),
+          }
+          if (callId) {
+            delete functionCallArguments[callId]
+          }
+          handleFunctionCall(payload)
+        }
         break
       case 'response.done':
         statusMessage.value = 'Ready'
@@ -395,6 +449,99 @@ const start = async () => {
         debug('Unhandled realtime event type', event.type)
         break
     }
+  }
+
+  const handleFunctionCall = (payload: { name?: string; call_id?: string; arguments?: string }) => {
+    if (!payload) return
+    let args: Record<string, unknown> = {}
+    if (typeof payload.arguments === 'string' && payload.arguments.trim()) {
+      try {
+        args = JSON.parse(payload.arguments)
+      } catch (error) {
+        console.error('Unable to parse function call arguments', error)
+      }
+    }
+
+    switch (payload.name) {
+      case END_CONVERSATION_TOOL.name:
+        handleHangupIntent(args, payload.call_id)
+        break
+      default:
+        debug('Unhandled function call request', payload.name, args)
+        if (payload.call_id) {
+          sendFunctionCallResult(payload.call_id, {
+            status: 'ignored',
+            reason: `Client has no handler for ${payload.name ?? 'unknown'} function.`,
+          })
+        }
+        break
+    }
+  }
+
+  const handleHangupIntent = (args: Record<string, unknown>, callId?: string) => {
+    const argBundle = args as { reason?: unknown }
+    const rawReason = typeof argBundle.reason === 'string' ? argBundle.reason.trim() : ''
+    const reason = rawReason || 'Patient requested to end the consultation.'
+    debug('Auto hangup intent received', reason)
+    scheduleAutomaticHangup(reason)
+
+    if (callId) {
+      sendFunctionCallResult(callId, {
+        action: 'auto_hangup',
+        status: 'scheduled',
+        reason,
+      })
+    }
+  }
+
+  const sendFunctionCallResult = (callId: string, result: unknown) => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    const output = typeof result === 'string' ? result : JSON.stringify(result)
+    const payload = {
+      type: 'conversation.item.create',
+      item: {
+        type: 'function_call_output',
+        call_id: callId,
+        output,
+      },
+    }
+
+    socket.send(JSON.stringify(payload))
+    requestAssistantResponse()
+    debug('Function call result sent', payload)
+  }
+
+  const scheduleAutomaticHangup = (reason: string) => {
+    pendingHangupReason = reason
+    if (hangupTimeout) {
+      clearTimeout(hangupTimeout)
+      hangupTimeout = null
+    }
+    debug('Auto hangup scheduled after current response', reason)
+  }
+
+  const finalizeScheduledHangup = () => {
+    if (!pendingHangupReason) return
+    const reason = pendingHangupReason
+    pendingHangupReason = null
+    if (hangupTimeout) {
+      clearTimeout(hangupTimeout)
+      hangupTimeout = null
+    }
+
+    hangupTimeout = setTimeout(() => {
+      hangupTimeout = null
+      triggerAutomaticHangup(reason)
+    }, AUTO_HANGUP_DELAY_MS)
+  }
+
+  const triggerAutomaticHangup = (reason: string) => {
+    if (!isActive.value) {
+      debug('Auto hangup skipped because session already inactive', reason)
+      return
+    }
+    debug('Triggering auto hangup', reason)
+    void stop()
   }
 
   const startRecording = () => {
