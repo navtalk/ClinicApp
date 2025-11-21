@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, reactive } from 'vue'
 import { useNavtalkRealtime } from '@/composables/useNavtalkRealtime'
 import placeholderImage from '@/assets/doctor.png'
 
@@ -21,10 +21,23 @@ const props = withDefaults(
 )
 
 const videoRef = ref<HTMLVideoElement | null>(null)
+const surfaceRef = ref<HTMLElement | null>(null)
+const pipRef = ref<HTMLElement | null>(null)
 const isVideoReady = ref(false)
 const cameraPreviewRef = ref<HTMLVideoElement | null>(null)
 const cameraStream = ref<MediaStream | null>(null)
 const cameraEnabled = ref(false)
+const isDragging = ref(false)
+const pipPosition = reactive({ x: 0, y: 0 })
+const ACTIVE_PADDING = 16
+let activePointerId: number | null = null
+
+const dragState = {
+  startX: 0,
+  startY: 0,
+  originX: 0,
+  originY: 0,
+}
 
 const navtalk = useNavtalkRealtime(
   {
@@ -99,6 +112,81 @@ const handleVideoReady = () => {
   isVideoReady.value = true
 }
 
+const clampPosition = (x: number, y: number) => {
+  const surface = surfaceRef.value
+  const pip = pipRef.value
+  if (!surface || !pip) {
+    return { x, y }
+  }
+  const maxX = Math.max(ACTIVE_PADDING, surface.clientWidth - pip.offsetWidth - ACTIVE_PADDING)
+  const maxY = Math.max(ACTIVE_PADDING, surface.clientHeight - pip.offsetHeight - ACTIVE_PADDING)
+  return {
+    x: Math.min(Math.max(x, ACTIVE_PADDING), maxX),
+    y: Math.min(Math.max(y, ACTIVE_PADDING), maxY),
+  }
+}
+
+const updatePipPosition = (x: number, y: number) => {
+  const next = clampPosition(x, y)
+  pipPosition.x = next.x
+  pipPosition.y = next.y
+}
+
+const initializePipPosition = () => {
+  nextTick(() => {
+    const surface = surfaceRef.value
+    const pip = pipRef.value
+    if (!surface || !pip) return
+    const defaultX = surface.clientWidth - pip.offsetWidth - 24
+    updatePipPosition(defaultX, 24)
+  })
+}
+
+const handleResize = () => {
+  updatePipPosition(pipPosition.x, pipPosition.y)
+}
+
+const pipStyle = computed(() => ({
+  transform: `translate3d(${pipPosition.x}px, ${pipPosition.y}px, 0)`,
+  cursor: isDragging.value ? 'grabbing' : 'grab',
+  transition: isDragging.value ? 'none' : 'transform 160ms ease-out',
+}))
+
+const onPipPointerMove = (event: PointerEvent) => {
+  if (!isDragging.value) return
+  const deltaX = event.clientX - dragState.startX
+  const deltaY = event.clientY - dragState.startY
+  updatePipPosition(dragState.originX + deltaX, dragState.originY + deltaY)
+}
+
+const endDrag = () => {
+  if (!isDragging.value) return
+  isDragging.value = false
+  if (activePointerId !== null) {
+    pipRef.value?.releasePointerCapture?.(activePointerId)
+    activePointerId = null
+  }
+  window.removeEventListener('pointermove', onPipPointerMove)
+  window.removeEventListener('pointerup', onPipPointerUp)
+}
+
+const onPipPointerUp = () => {
+  endDrag()
+}
+
+const onPipPointerDown = (event: PointerEvent) => {
+  if (!pipRef.value) return
+  dragState.startX = event.clientX
+  dragState.startY = event.clientY
+  dragState.originX = pipPosition.x
+  dragState.originY = pipPosition.y
+  isDragging.value = true
+  activePointerId = event.pointerId
+  pipRef.value.setPointerCapture?.(event.pointerId)
+  window.addEventListener('pointermove', onPipPointerMove)
+  window.addEventListener('pointerup', onPipPointerUp)
+}
+
 watch(
   () => navtalk.isActive.value,
   (active) => {
@@ -108,14 +196,28 @@ watch(
   }
 )
 
+watch(cameraEnabled, () => {
+  nextTick(() => {
+    handleResize()
+  })
+})
+
 onBeforeUnmount(() => {
   stopCamera()
+  window.removeEventListener('resize', handleResize)
+  endDrag()
+})
+
+onMounted(() => {
+  void startCamera()
+  initializePipPosition()
+  window.addEventListener('resize', handleResize)
 })
 </script>
 
 <template>
   <section class="consult-shell">
-    <div class="video-surface">
+    <div ref="surfaceRef" class="video-surface">
       <video
         ref="videoRef"
         class="video-feed"
@@ -138,7 +240,13 @@ onBeforeUnmount(() => {
         <img :src="placeholderImage" alt="Digital physician" />
       </div>
 
-      <div class="picture-in-picture">
+      <div
+        ref="pipRef"
+        class="picture-in-picture"
+        :class="{ dragging: isDragging }"
+        :style="pipStyle"
+        @pointerdown.prevent="onPipPointerDown"
+      >
         <div v-if="cameraEnabled" class="pip-video">
           <video
             ref="cameraPreviewRef"
@@ -276,8 +384,16 @@ onBeforeUnmount(() => {
 
 .picture-in-picture {
   position: absolute;
-  top: 1.5rem;
-  right: 1.5rem;
+  top: 0;
+  left: 0;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+  transition: transform 160ms ease-out;
+}
+
+.picture-in-picture.dragging {
+  cursor: grabbing;
 }
 
 .pip-card {
@@ -292,6 +408,7 @@ onBeforeUnmount(() => {
   font-size: 0.85rem;
   border: 1px solid rgba(124, 131, 214, 0.2);
   backdrop-filter: blur(8px);
+  pointer-events: none;
 }
 
 .pip-video {
@@ -301,6 +418,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border: 2px solid rgba(255, 255, 255, 0.8);
   box-shadow: 0 12px 24px -18px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
 }
 
 .pip-preview {
@@ -447,8 +565,8 @@ onBeforeUnmount(() => {
   }
 
   .picture-in-picture {
-    top: 1rem;
-    right: 1rem;
+    top: 0;
+    left: 0;
   }
 
   .pip-card {
