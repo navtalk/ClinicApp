@@ -152,6 +152,9 @@ const pipStyle = computed(() => ({
   transition: isDragging.value ? 'none' : 'transform 160ms ease-out',
 }))
 
+const micLabel = computed(() => (navtalk.isMicEnabled.value ? 'Mic On' : 'Mic Off'))
+const cameraLabel = computed(() => (cameraEnabled.value ? 'Camera On' : 'Camera Off'))
+
 const onPipPointerMove = (event: PointerEvent) => {
   if (!isDragging.value) return
   const deltaX = event.clientX - dragState.startX
@@ -190,10 +193,18 @@ const onPipPointerDown = (event: PointerEvent) => {
 watch(
   () => navtalk.isActive.value,
   (active) => {
-    if (!active) {
+    if (active) {
+      navtalk.enableMicrophone()
+      if (!cameraEnabled.value) {
+        void startCamera()
+      }
+    } else {
+      navtalk.disableMicrophone()
+      stopCamera()
       isVideoReady.value = false
     }
-  }
+  },
+  { immediate: true }
 )
 
 watch(cameraEnabled, () => {
@@ -209,7 +220,6 @@ onBeforeUnmount(() => {
 })
 
 onMounted(() => {
-  void startCamera()
   initializePipPosition()
   window.addEventListener('resize', handleResize)
 })
@@ -272,11 +282,11 @@ onMounted(() => {
         type="button"
         @click="navtalk.toggleMicrophone()"
       >
-        <span class="icon mic"></span>
-        {{ navtalk.isMicEnabled.value ? 'Microphone On' : 'Microphone Off' }}
+        <span :class="['icon', 'mic', navtalk.isMicEnabled.value ? 'on' : 'off']"></span>
+        {{ micLabel }}
       </button>
       <button
-        class="primary-button"
+        :class="['primary-button', navtalk.isActive.value ? 'end-call' : 'start-call']"
         type="button"
         :disabled="!canToggle"
         @click="toggleSession"
@@ -284,8 +294,8 @@ onMounted(() => {
         {{ sessionLabel }}
       </button>
       <button class="icon-button" type="button" @click="toggleCamera">
-        <span class="icon cam"></span>
-        {{ cameraEnabled ? 'Camera Off' : 'Camera On' }}
+        <span :class="['icon', 'cam', cameraEnabled ? 'on' : 'off']"></span>
+        {{ cameraLabel }}
       </button>
     </div>
 
@@ -512,12 +522,20 @@ onMounted(() => {
   filter: brightness(1.1);
 }
 
-.icon.mic {
-  background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%23ffffff' fill-opacity='0.9' d='M8 11a2.5 2.5 0 0 0 2.5-2.5v-4a2.5 2.5 0 0 0-5 0v4A2.5 2.5 0 0 0 8 11Zm3.5-2.5a3.5 3.5 0 0 1-7 0h-1a4.5 4.5 0 0 0 4 4.473V14H5a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H8.5v-1.027a4.5 4.5 0 0 0 4-4.473h-1Z'/%3E%3C/svg%3E");
+.icon.mic.on {
+  background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%23ffffff' fill-opacity='0.92' d='M8 11a2.5 2.5 0 0 0 2.5-2.5v-4a2.5 2.5 0 0 0-5 0v4A2.5 2.5 0 0 0 8 11Zm3.5-2.5a3.5 3.5 0 0 1-7 0h-1a4.5 4.5 0 0 0 4 4.473V14H5a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H8.5v-1.027a4.5 4.5 0 0 0 4-4.473h-1Z'/%3E%3C/svg%3E");
 }
 
-.icon.cam {
-  background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%23ffffff' fill-opacity='0.9' d='M2.5 4A1.5 1.5 0 0 0 1 5.5v5A1.5 1.5 0 0 0 2.5 12h6A1.5 1.5 0 0 0 10 10.5v-5A1.5 1.5 0 0 0 8.5 4h-6ZM11 6.18v3.64l3.146 1.573A.5.5 0 0 0 15 11V5a.5.5 0 0 0-.854-.354L11 6.18Z'/%3E%3C/svg%3E");
+.icon.mic.off {
+  background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%23ffffff' fill-opacity='0.5' d='M8 11a2.5 2.5 0 0 0 2.5-2.5v-4a2.5 2.5 0 0 0-5 0v4A2.5 2.5 0 0 0 8 11Z'/%3E%3Cpath stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' d='M4 12.5c1 .8 2.2 1.226 3.5 1.5M3 3l10 10'/%3E%3C/svg%3E");
+}
+
+.icon.cam.on {
+  background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%23ffffff' fill-opacity='0.92' d='M2.5 4A1.5 1.5 0 0 0 1 5.5v5A1.5 1.5 0 0 0 2.5 12h6A1.5 1.5 0 0 0 10 10.5v-5A1.5 1.5 0 0 0 8.5 4h-6ZM11 6.18v3.64l3.146 1.573A.5.5 0 0 0 15 11V5a.5.5 0 0 0-.854-.354L11 6.18Z'/%3E%3C/svg%3E");
+}
+
+.icon.cam.off {
+  background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%23ffffff' fill-opacity='0.5' d='M1 5.5A1.5 1.5 0 0 1 2.5 4H6l4 4v3a1.5 1.5 0 0 1-1.5 1.5h-6A1.5 1.5 0 0 1 1 11V5.5Z'/%3E%3Cpath stroke='%23ffffff' stroke-width='1.4' stroke-linecap='round' d='M4 13.5 12.5 5M11 6l3.8-1.9c.3-.15.7.07.7.41v6.98c0 .34-.37.56-.67.39L11 9'/%3E%3C/svg%3E");
 }
 
 .primary-button {
@@ -526,14 +544,28 @@ onMounted(() => {
   padding: 0.7rem 2.2rem;
   font-weight: 600;
   color: #fff;
-  background: linear-gradient(135deg, #ff6262 0%, #ff8585 100%);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
 }
 
-.primary-button:hover {
+.primary-button.start-call {
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 55%, #60a5fa 100%);
+  box-shadow: 0 18px 40px -30px rgba(59, 130, 246, 0.9);
+}
+
+.primary-button.start-call:hover {
   transform: translateY(-1px);
-  box-shadow: 0 18px 40px -30px rgba(255, 115, 115, 0.9);
+  box-shadow: 0 18px 40px -20px rgba(59, 130, 246, 0.95);
+}
+
+.primary-button.end-call {
+  background: linear-gradient(135deg, #f53d4c 0%, #ff5f6d 45%, #ff7b82 100%);
+  box-shadow: 0 18px 40px -30px rgba(245, 61, 76, 0.7);
+}
+
+.primary-button.end-call:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 40px -20px rgba(245, 61, 76, 0.85);
 }
 
 .primary-button:disabled {
