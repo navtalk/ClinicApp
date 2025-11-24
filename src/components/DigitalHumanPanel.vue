@@ -292,7 +292,7 @@ onMounted(() => {
 
       <div v-if="!isVideoReady" class="placeholder-layer">
         <img :src="placeholderImage" alt="Digital physician placeholder" />
-        <div class="loading-stack">
+        <div v-if="navtalk.isConnecting.value" class="loading-stack">
           <span class="spinner" aria-hidden="true"></span>
           <p>Connecting to your digital physician...</p>
         </div>
@@ -303,13 +303,14 @@ onMounted(() => {
       </div>
 
       <div
+        v-if="cameraEnabled"
         ref="pipRef"
         class="picture-in-picture"
         :class="{ dragging: isDragging }"
         :style="pipStyle"
         @pointerdown.prevent="onPipPointerDown"
       >
-        <div v-if="cameraEnabled" class="pip-video">
+        <div class="pip-video">
           <video
             ref="cameraPreviewRef"
             autoplay
@@ -318,7 +319,6 @@ onMounted(() => {
             class="pip-preview"
           ></video>
         </div>
-        <div v-else class="pip-card">No Camera</div>
       </div>
 
       <div class="status-chip">
