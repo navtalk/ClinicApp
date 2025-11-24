@@ -370,6 +370,35 @@ const start = async () => {
     }
   }
 
+  const sendImageFrame = (dataUrl: string, requestResponse = false) => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false
+    if (!dataUrl.startsWith('data:image')) {
+      console.warn('sendImageFrame called with non-image payload')
+      return false
+    }
+
+    const payload = {
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user' as const,
+        content: [
+          {
+            type: 'input_image',
+            image_url: dataUrl,
+          },
+        ],
+      },
+    }
+
+    socket.send(JSON.stringify(payload))
+    debug('Camera frame sent')
+    if (requestResponse) {
+      requestAssistantResponse()
+    }
+    return true
+  }
+
   const handleRealtimeEvent = (event: any) => {
     switch (event.type) {
       case 'session.created':
@@ -734,6 +763,7 @@ const start = async () => {
     toggleMicrophone,
     enableMicrophone,
     disableMicrophone,
+    sendImageFrame,
   }
 }
 
@@ -769,3 +799,4 @@ function loadChatHistory(): ConversationMessage[] {
     return []
   }
 }
+

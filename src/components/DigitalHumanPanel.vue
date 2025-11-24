@@ -31,6 +31,9 @@ const isDragging = ref(false)
 const pipPosition = reactive({ x: 0, y: 0 })
 const ACTIVE_PADDING = 16
 let activePointerId: number | null = null
+const CAMERA_CAPTURE_INTERVAL_MS = 2000
+let cameraCaptureTimer: ReturnType<typeof setInterval> | null = null
+const captureCanvas = document.createElement('canvas')
 
 const dragState = {
   startX: 0,
@@ -95,6 +98,7 @@ const startCamera = async () => {
 }
 
 const stopCamera = () => {
+  stopCameraCapture()
   cameraStream.value?.getTracks().forEach((track) => track.stop())
   cameraStream.value = null
   cameraEnabled.value = false
@@ -151,6 +155,8 @@ const pipStyle = computed(() => ({
   cursor: isDragging.value ? 'grabbing' : 'grab',
   transition: isDragging.value ? 'none' : 'transform 160ms ease-out',
 }))
+const shouldSendCameraFrames = computed(() => cameraEnabled.value && navtalk.isActive.value)
+
 
 const micLabel = computed(() => (navtalk.isMicEnabled.value ? 'Mic On' : 'Mic Off'))
 const cameraLabel = computed(() => (cameraEnabled.value ? 'Camera On' : 'Camera Off'))
@@ -189,6 +195,45 @@ const onPipPointerDown = (event: PointerEvent) => {
   window.addEventListener('pointermove', onPipPointerMove)
   window.addEventListener('pointerup', onPipPointerUp)
 }
+const captureFrameAndSend = () => {
+  const video = cameraPreviewRef.value
+  if (!video || !shouldSendCameraFrames.value) return
+  if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
+
+  const width = video.videoWidth || video.clientWidth
+  const height = video.videoHeight || video.clientHeight
+  if (!width || !height) return
+
+  captureCanvas.width = width
+  captureCanvas.height = height
+  const ctx = captureCanvas.getContext('2d')
+  if (!ctx) return
+
+  ctx.drawImage(video, 0, 0, width, height)
+  captureCanvas.toBlob((blob) => {
+    if (!blob) return
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        navtalk.sendImageFrame(reader.result)
+      }
+    }
+    reader.readAsDataURL(blob)
+  }, 'image/jpeg', 0.7)
+}
+
+const startCameraCapture = () => {
+  if (cameraCaptureTimer || !shouldSendCameraFrames.value) return
+  captureFrameAndSend()
+  cameraCaptureTimer = window.setInterval(captureFrameAndSend, CAMERA_CAPTURE_INTERVAL_MS)
+}
+
+const stopCameraCapture = () => {
+  if (cameraCaptureTimer) {
+    clearInterval(cameraCaptureTimer)
+    cameraCaptureTimer = null
+  }
+}
 
 watch(
   () => navtalk.isActive.value,
@@ -212,6 +257,13 @@ watch(cameraEnabled, () => {
     handleResize()
   })
 })
+watch(shouldSendCameraFrames, (enabled) => {
+  if (enabled) {
+    startCameraCapture()
+  } else {
+    stopCameraCapture()
+  }
+}, { immediate: true })
 
 onBeforeUnmount(() => {
   stopCamera()
@@ -619,3 +671,4 @@ onMounted(() => {
   }
 }
 </style>
+
