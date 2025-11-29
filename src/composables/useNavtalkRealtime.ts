@@ -71,6 +71,8 @@ export function useNavtalkRealtime(config: NavtalkConfig, options: UseNavtalkRea
   const functionCallArguments: Record<string, string> = {}
   let pendingHangupReason: string | null = null
   let hangupTimeout: ReturnType<typeof setTimeout> | null = null
+  let sessionId: string | null = null
+  let targetSessionId: string | null = null
 
   watch(
     chatMessages,
@@ -133,7 +135,6 @@ const start = async () => {
 
     try {
       await openRealtimeSocket()
-      await openResultSocket()
       isActive.value = true
       statusMessage.value = 'Ready'
     } catch (error) {
@@ -187,6 +188,8 @@ const start = async () => {
       }
       resultSocket = null
     }
+    sessionId = null
+    targetSessionId = null
   }
 
   const cleanupPeerConnection = () => {
@@ -284,17 +287,26 @@ const start = async () => {
 
   const openResultSocket = () =>
     new Promise<void>((resolve, reject) => {
-      if (resultSocket) {
-        resolve()
+      if (!sessionId) {
+        reject(new Error('sessionId is not available for result socket'))
         return
       }
 
-      const endpoint = `wss://${baseUrl}/api/webrtc?userId=${encodeURIComponent(config.license)}`
+      if (resultSocket) {
+        try {
+          resultSocket.close()
+        } catch {
+          // ignore close errors
+        }
+        resultSocket = null
+      }
+
+      const endpoint = `wss://${baseUrl}/api/webrtc?userId=${encodeURIComponent(sessionId)}`
       resultSocket = new WebSocket(endpoint)
       debug('Opening result socket', endpoint)
 
       resultSocket.onopen = () => {
-        const message = { type: 'create', targetSessionId: config.license }
+        const message = { type: 'create', targetSessionId: targetSessionId ?? sessionId }
         resultSocket?.send(JSON.stringify(message))
         debug('Result socket open, create sent', message)
         resolve()
@@ -409,6 +421,9 @@ const start = async () => {
         requestAssistantResponse()
         startRecording()
         break
+      case 'session.session_id':
+        handleSessionId(event.session_id ?? event.sessionId)
+        break
       case 'input_audio_buffer.speech_started':
         statusMessage.value = 'Patient speaking'
         resetStreamingState()
@@ -478,6 +493,16 @@ const start = async () => {
         debug('Unhandled realtime event type', event.type)
         break
     }
+  }
+
+  const handleSessionId = (value?: string) => {
+    const next = typeof value === 'string' ? value.trim() : ''
+    if (!next || next === sessionId) return
+    sessionId = next
+    targetSessionId = `target-${sessionId}`
+    openResultSocket().catch((error) => {
+      console.error('Failed to open result socket with session id', error)
+    })
   }
 
   const handleFunctionCall = (payload: { name?: string; call_id?: string; arguments?: string }) => {
