@@ -29,6 +29,7 @@ const cameraStream = ref<MediaStream | null>(null)
 const cameraEnabled = ref(false)
 const isDragging = ref(false)
 const pipPosition = reactive({ x: 0, y: 0 })
+const pipDimensions = reactive({ width: 168, height: 115 })
 const ACTIVE_PADDING = 16
 let activePointerId: number | null = null
 const CAMERA_CAPTURE_INTERVAL_MS = 2000
@@ -136,11 +137,23 @@ const updatePipPosition = (x: number, y: number) => {
   pipPosition.y = next.y
 }
 
+const updatePipDimensions = () => {
+  const surface = surfaceRef.value
+  if (!surface) return
+  const reference = Math.min(surface.clientWidth, surface.clientHeight)
+  if (!reference) return
+  const width = Math.max(120, reference * 0.302)
+  const height = Math.max(90, reference * 0.206)
+  pipDimensions.width = Math.round(width)
+  pipDimensions.height = Math.round(height)
+}
+
 const initializePipPosition = () => {
   nextTick(() => {
     const surface = surfaceRef.value
     const pip = pipRef.value
     if (!surface || !pip) return
+    updatePipDimensions()
     const defaultX = surface.clientWidth - pip.offsetWidth - 24
     updatePipPosition(defaultX, 24)
   })
@@ -148,12 +161,17 @@ const initializePipPosition = () => {
 
 const handleResize = () => {
   updatePipPosition(pipPosition.x, pipPosition.y)
+  updatePipDimensions()
 }
 
 const pipStyle = computed(() => ({
   transform: `translate3d(${pipPosition.x}px, ${pipPosition.y}px, 0)`,
   cursor: isDragging.value ? 'grabbing' : 'grab',
   transition: isDragging.value ? 'none' : 'transform 160ms ease-out',
+}))
+const pipDimensionStyle = computed(() => ({
+  width: `${pipDimensions.width}px`,
+  height: `${pipDimensions.height}px`,
 }))
 const shouldSendCameraFrames = computed(() => cameraEnabled.value && navtalk.isActive.value)
 
@@ -307,7 +325,7 @@ onMounted(() => {
         ref="pipRef"
         class="picture-in-picture"
         :class="{ dragging: isDragging }"
-        :style="pipStyle"
+        :style="[pipStyle, pipDimensionStyle]"
         @pointerdown.prevent="onPipPointerDown"
       >
         <div class="pip-video">
@@ -459,8 +477,8 @@ onMounted(() => {
 }
 
 .pip-card {
-  width: 140px;
-  height: 96px;
+  width: 196px;
+  height: 134px;
   border-radius: 18px;
   background: rgba(8, 11, 38, 0.75);
   display: flex;
@@ -474,8 +492,8 @@ onMounted(() => {
 }
 
 .pip-video {
-  width: 140px;
-  height: 96px;
+  width: 100%;
+  height: 100%;
   border-radius: 18px;
   overflow: hidden;
   border: 2px solid rgba(255, 255, 255, 0.8);
