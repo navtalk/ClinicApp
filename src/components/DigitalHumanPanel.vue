@@ -27,6 +27,7 @@ const isVideoReady = ref(false)
 const cameraPreviewRef = ref<HTMLVideoElement | null>(null)
 const cameraStream = ref<MediaStream | null>(null)
 const cameraEnabled = ref(false)
+const cameraErrorMessage = ref('')
 const isDragging = ref(false)
 const pipPosition = reactive({ x: 0, y: 0 })
 const pipDimensions = reactive({ width: 168, height: 115 })
@@ -75,8 +76,38 @@ const toggleCamera = async () => {
   }
 }
 
+const describeCameraError = (error: unknown) => {
+  const errorInfo = error as { name?: string }
+  const name = errorInfo?.name ?? ''
+  const detail =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+      ? error
+      : ''
+
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return 'No camera detected. Please connect a webcam and try again.'
+  }
+
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    return 'Camera access was denied. Please grant permission and retry.'
+  }
+
+  if (name === 'NotReadableError') {
+    return 'Camera is currently unavailable. Ensure no other apps are using it and try again.'
+  }
+
+  if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+    return 'Camera settings cannot be satisfied on this device. Try a different camera or adjust your settings.'
+  }
+
+  return detail ? `Unable to open camera: ${detail}` : 'Unable to open camera. Please try again later.'
+}
+
 const startCamera = async () => {
   try {
+    cameraErrorMessage.value = ''
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: 320, height: 180 },
       audio: false,
@@ -95,6 +126,7 @@ const startCamera = async () => {
     console.error('Failed to access camera', error)
     cameraStream.value = null
     cameraEnabled.value = false
+    cameraErrorMessage.value = describeCameraError(error)
   }
 }
 
@@ -368,6 +400,10 @@ onMounted(() => {
         {{ cameraLabel }}
       </button>
     </div>
+
+    <p v-if="cameraErrorMessage" class="error camera-error">
+      {{ cameraErrorMessage }}
+    </p>
 
     <p class="tip">
       Speak naturally and pause after each response. The digital doctor listens for silence before
@@ -659,6 +695,13 @@ onMounted(() => {
   border-radius: 16px;
   padding: 0.75rem 1.2rem;
   color: #ffdede;
+}
+
+.camera-error {
+  margin-top: 0.5rem;
+  background: rgba(255, 200, 100, 0.18);
+  border-color: rgba(255, 215, 140, 0.45);
+  color: #ffe7c1;
 }
 
 @media (max-width: 720px) {
