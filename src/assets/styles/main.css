@@ -54,6 +54,16 @@ a {
   font-size: 1.25rem;
 }
 
+.brand-link {
+  text-decoration: none;
+}
+
+.brand-logo {
+  width: 100px;
+  height: 40px;
+  object-fit: contain;
+}
+
 .brand-icon {
   display: inline-flex;
   align-items: center;

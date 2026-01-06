@@ -59,10 +59,9 @@ const toggleConsent = () => {
 <template>
   <div class="layout" :class="{ 'layout--consultation': showConsultation }">
     <header class="top-bar">
-      <div class="brand">
-        <span class="brand-icon">NT</span>
-        <span class="brand-text">NavTalk Clinic</span>
-      </div>
+      <a href="/" class="brand brand-link">
+        <img src="/navtalk-logo.png" alt="NavTalk logo" class="brand-logo" />
+      </a>
       <button v-if="showConsultation" type="button" class="secondary" @click="restartIntake">
         Back to Intake
       </button>
