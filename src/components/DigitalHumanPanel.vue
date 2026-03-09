@@ -109,11 +109,17 @@ const startCamera = async () => {
   try {
     cameraErrorMessage.value = ''
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 320, height: 180 },
+      video: { 
+        width: { ideal: 640 }, 
+        height: { ideal: 360 }, 
+        frameRate: { ideal: 15 } 
+      },
       audio: false,
     })
     cameraStream.value = stream
     cameraEnabled.value = true
+
+    navtalk.setCameraStream(stream)
 
     await nextTick()
     if (cameraPreviewRef.value) {
@@ -122,6 +128,8 @@ const startCamera = async () => {
         .play()
         .catch((error) => console.error('Camera preview failed to play', error))
     }
+    
+    console.log('Camera started successfully')
   } catch (error) {
     console.error('Failed to access camera', error)
     cameraStream.value = null
@@ -132,12 +140,17 @@ const startCamera = async () => {
 
 const stopCamera = () => {
   stopCameraCapture()
+  
+  navtalk.setCameraStream(null)
+  
   cameraStream.value?.getTracks().forEach((track) => track.stop())
   cameraStream.value = null
   cameraEnabled.value = false
   if (cameraPreviewRef.value) {
     cameraPreviewRef.value.srcObject = null
   }
+  
+  console.log('Camera stopped')
 }
 
 const start = () => navtalk.start()

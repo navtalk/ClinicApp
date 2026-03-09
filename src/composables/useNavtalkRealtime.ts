@@ -5,6 +5,9 @@ const NavTalkMessageType = Object.freeze({
   CONNECTED_FAIL: 'conversation.connected.fail',
   CONNECTED_CLOSE: 'conversation.connected.close',
   INSUFFICIENT_BALANCE: 'conversation.connected.insufficient_balance',
+  CONNECTED_GPU_FULL: 'conversation.connected.gpu_full',
+  CONNECTED_CONNECTION_LIMIT_EXCEEDED: 'conversation.connected.connection_limit_exceeded',
+  CONNECTED_BACKEND_ERROR: 'conversation.connected.backend_error',
   WEB_RTC_OFFER: 'webrtc.signaling.offer',
   WEB_RTC_ANSWER: 'webrtc.signaling.answer',
   WEB_RTC_ICE_CANDIDATE: 'webrtc.signaling.iceCandidate',
@@ -95,6 +98,8 @@ export function useNavtalkRealtime(config: NavtalkConfig, options: UseNavtalkRea
   let audioContext: AudioContext | null = null
   let audioProcessor: ScriptProcessorNode | null = null
   let audioStream: MediaStream | null = null
+  let cameraStreamInternal: MediaStream | null = null
+  let videoSenders: RTCRtpSender[] = []
   let configuration: RTCConfiguration = { ...ICE_CONFIGURATION }
   const isMicEnabled = ref(true)
   const functionCallArguments: Record<string, string> = {}
@@ -205,6 +210,8 @@ const start = async () => {
   }
 
   const cleanupPeerConnection = () => {
+    videoSenders = []
+    
     if (peerConnection) {
       try {
         peerConnection.onicecandidate = null
@@ -400,6 +407,41 @@ const start = async () => {
     }
   }
 
+  const setCameraStream = (stream: MediaStream | null) => {
+    cameraStreamInternal = stream
+    if (stream && peerConnection) {
+      pushVideoStream(true)
+    } else if (!stream) {
+      pushVideoStream(false)
+    }
+  }
+
+  const pushVideoStream = (enable: boolean) => {
+    if (!cameraStreamInternal || !peerConnection) {
+      return
+    }
+
+    if (enable) {
+      cameraStreamInternal.getTracks().forEach((track) => {
+        if (track.kind === 'video') {
+          const sender = peerConnection!.addTrack(track, cameraStreamInternal!)
+          videoSenders.push(sender)
+          debug('Video track added to WebRTC connection')
+        }
+      })
+    } else {
+      videoSenders.forEach((sender) => {
+        try {
+          peerConnection?.removeTrack(sender)
+        } catch (error) {
+          console.warn('Failed to remove video track', error)
+        }
+      })
+      videoSenders = []
+      debug('Video tracks removed from WebRTC connection')
+    }
+  }
+
   const sendImageFrame = (dataUrl: string, requestResponse = false) => {
     if (!socket || socket.readyState !== WebSocket.OPEN) return false
     if (!dataUrl.startsWith('data:image')) {
@@ -408,24 +450,15 @@ const start = async () => {
     }
 
     const payload = {
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'user' as const,
-        content: [
-          {
-            type: 'input_image',
-            image_url: dataUrl,
-          },
-        ],
+      type: NavTalkMessageType.REALTIME_INPUT_IMAGE,
+      data: {
+        content: dataUrl,
+        reply: requestResponse ? 1 : 0,
       },
     }
 
     socket.send(JSON.stringify(payload))
-    debug('Camera frame sent')
-    if (requestResponse) {
-      requestAssistantResponse()
-    }
+    debug('Camera frame sent', { reply: requestResponse ? 1 : 0 })
     return true
   }
 
@@ -533,14 +566,26 @@ const start = async () => {
         statusMessage.value = 'Listening'
         break
       }
+      case NavTalkMessageType.CONNECTED_GPU_FULL:
+        notifyError('GPU resources are currently busy. Please try again later.')
+        if (isActive.value) {
+          void stop()
+        }
+        break
+      case NavTalkMessageType.CONNECTED_CONNECTION_LIMIT_EXCEEDED:
+        notifyError('Connection limit exceeded. Please try again later.')
+        if (isActive.value) {
+          void stop()
+        }
+        break
+      case NavTalkMessageType.CONNECTED_BACKEND_ERROR:
+        notifyError('Backend error occurred. Please try again.')
+        if (isActive.value) {
+          void stop()
+        }
+        break
       case 'response.done':
         statusMessage.value = 'Ready'
-        break
-      case 'session.gpu_full':
-        notifyError('GPU resources are currently busy. Please try again later.')
-        break
-      case 'session.insufficient_balance':
-        notifyError('Account balance is insufficient. Please top up to continue.')
         break
       case 'error':
         debug('Realtime error event', event)
@@ -775,6 +820,10 @@ const start = async () => {
       await peerConnection.setLocalDescription(answer)
 
       sendAnswerMessage(peerConnection.localDescription)
+      
+      if (cameraStreamInternal) {
+        pushVideoStream(true)
+      }
     } catch (error) {
       notifyError('Unable to establish media stream.')
       console.error('Error handling WebRTC offer', error)
@@ -836,6 +885,8 @@ const start = async () => {
     enableMicrophone,
     disableMicrophone,
     sendImageFrame,
+    setCameraStream,
+    pushVideoStream,
   }
 }
 
