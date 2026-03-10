@@ -28,6 +28,7 @@ const NavTalkMessageType = Object.freeze({
   REALTIME_INPUT_AUDIO_BUFFER_APPEND: 'realtime.input_audio_buffer.append',
   REALTIME_INPUT_TEXT: 'realtime.input_text',
   REALTIME_INPUT_IMAGE: 'realtime.input_image',
+  REALTIME_INPUT_CONFIG: 'realtime.input_config',
   RESPONSE_CREATE: 'response.create',
   UNKNOWN_TYPE: 'unknown',
 } as const)
@@ -305,6 +306,7 @@ const start = async () => {
       socket.onopen = () => {
         statusMessage.value = 'Connected'
         debug('Realtime socket open')
+        sendSessionConfig()
         resolve()
       }
 
@@ -343,37 +345,30 @@ const start = async () => {
       }
     })
 
-  const sendSessionUpdate = () => {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return
-
-    const instructions = [config.prompt?.trim(), AUTO_HANGUP_INSTRUCTIONS].filter(Boolean).join('\n\n')
-
-    const connection = socket
-    const sessionConfig = {
-      type: 'session.update',
-      session: {
-        instructions,
-        turn_detection: {
-          type: 'server_vad',
-          threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 500,
-        },
-        voice: config.voice,
-        temperature: 1,
-        max_response_output_tokens: 4096,
-        modalities: ['text', 'audio'],
-        input_audio_format: 'pcm16',
-        output_audio_format: 'pcm16',
-        input_audio_transcription: {
-          model: 'whisper-1',
-        },
-        tools: [END_CONVERSATION_TOOL],
-      },
+  const sendSessionConfig = () => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      console.warn('WebSocket not ready for config send')
+      return
     }
 
-    connection.send(JSON.stringify(sessionConfig))
+    const instructions = [config.prompt?.trim(), AUTO_HANGUP_INSTRUCTIONS].filter(Boolean).join('\n\n')
+    const sessionConfig = {
+      voice: config.voice,
+      prompt: instructions,
+    }
+
+    console.log('Sending session config:', sessionConfig)
+    socket.send(
+      JSON.stringify({
+        type: 'realtime.input_config',
+        data: { content: JSON.stringify(sessionConfig) },
+      })
+    )
     debug('Session configuration sent')
+  }
+
+  const sendSessionUpdate = () => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
 
     chatMessages.value.forEach((message) => {
       if (message.role !== 'user') return
@@ -392,7 +387,7 @@ const start = async () => {
           ],
         },
       }
-      connection.send(JSON.stringify(historyMessage))
+      socket?.send(JSON.stringify(historyMessage))
       debug('Replayed user message for session context', text)
     })
   }
@@ -763,22 +758,6 @@ const start = async () => {
     try {
       debug('Handling offer')
       const offer = new RTCSessionDescription(message.sdp)
-
-      try {
-        const response = await fetch(`https://${baseUrl}/api/webrtc/generate-ice-servers`, {
-          method: 'POST',
-        })
-        if (response.ok) {
-          const body = await response.json()
-          const servers = body?.data?.iceServers ?? body?.iceServers
-          if (Array.isArray(servers) && servers.length) {
-            configuration = { iceServers: servers }
-            debug('ICE servers received', servers)
-          }
-        }
-      } catch (error) {
-        debug('Falling back to default ICE configuration', error)
-      }
 
       cleanupPeerConnection()
       peerConnection = new RTCPeerConnection(configuration)
