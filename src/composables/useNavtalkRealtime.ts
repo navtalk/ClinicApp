@@ -50,7 +50,6 @@ export interface NavtalkConfig {
   voice: string
   prompt: string
   baseUrl?: string
-  model?: string
 }
 
 export interface UseNavtalkRealtimeOptions {
@@ -270,9 +269,6 @@ const start = async () => {
     const endpointUrl = new URL('/wss/v2/realtime-chat', normalizedBase)
     endpointUrl.searchParams.set('license', config.license)
     endpointUrl.searchParams.set('name', config.characterName)
-    if (config.model?.trim()) {
-      endpointUrl.searchParams.set('model', config.model.trim())
-    }
     return endpointUrl.toString()
   }
 
