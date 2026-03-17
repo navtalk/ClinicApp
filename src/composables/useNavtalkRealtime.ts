@@ -2,6 +2,7 @@ import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 
 const NavTalkMessageType = Object.freeze({
   CONNECTED_SUCCESS: 'conversation.connected.success',
+  CONNECTED_WARNING: 'conversation.connected.warning',
   CONNECTED_FAIL: 'conversation.connected.fail',
   CONNECTED_CLOSE: 'conversation.connected.close',
   INSUFFICIENT_BALANCE: 'conversation.connected.insufficient_balance',
@@ -46,7 +47,8 @@ export interface ConversationMessage {
 
 export interface NavtalkConfig {
   license: string
-  characterName: string
+  characterName: string  // Optional if avatarId is provided
+  avatarId?: string      // Optional: Direct avatar ID for precise lookup
   voice: string
   prompt: string
   baseUrl?: string
@@ -268,7 +270,12 @@ const start = async () => {
       : `wss://${trimmedBase}`
     const endpointUrl = new URL('/wss/v2/realtime-chat', normalizedBase)
     endpointUrl.searchParams.set('license', config.license)
-    endpointUrl.searchParams.set('name', config.characterName)
+    // Use avatarId for precise lookup, fallback to name if not provided
+    if (config.avatarId) {
+      endpointUrl.searchParams.set('avatarId', config.avatarId)
+    } else {
+      endpointUrl.searchParams.set('name', config.characterName)
+    }
     return endpointUrl.toString()
   }
 
@@ -470,6 +477,11 @@ const start = async () => {
         }
         statusMessage.value = 'Connected'
         break
+      case NavTalkMessageType.CONNECTED_WARNING: {
+        const warningMsg = payload?.message || 'Warning from server'
+        console.warn('[NavTalk Connection Warning]', warningMsg)
+        break
+      }
       case NavTalkMessageType.CONNECTED_FAIL:
       case NavTalkMessageType.CONNECTED_CLOSE:
         notifyError(payload?.message ?? 'Connection error occurred.')
